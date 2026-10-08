@@ -6,12 +6,30 @@
  * executes LLM run with pgsodium encrypted key, logs run history, and sends email via Resend.
  */
 
+import { timingSafeEqual } from 'node:crypto'
+
+/**
+ * Constant-time check of the Authorization header against CRON_SECRET.
+ * Fails closed: with no secret configured, every request is rejected, since
+ * this endpoint spends users' stored API keys and sends email.
+ */
+export function isAuthorized(authHeader, cronSecret) {
+  if (!cronSecret || typeof authHeader !== 'string') return false
+  const expected = Buffer.from(`Bearer ${cronSecret}`)
+  const received = Buffer.from(authHeader)
+  return expected.length === received.length && timingSafeEqual(expected, received)
+}
+
 export default async function handler(req, res) {
-  // Verify Cron Secret if configured
-  const authHeader = req.headers.authorization || req.headers['authorization']
+  const authHeader = req.headers?.authorization
   const cronSecret = process.env.CRON_SECRET
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error('Cron tick rejected: CRON_SECRET is not configured.')
+    return res.status(401).json({ error: 'Unauthorized: CRON_SECRET is not configured' })
+  }
+
+  if (!isAuthorized(authHeader, cronSecret)) {
     return res.status(401).json({ error: 'Unauthorized: Invalid Cron Secret' })
   }
 
