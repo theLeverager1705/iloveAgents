@@ -1,0 +1,53 @@
+# Render Blueprint: deploys iloveAgents as a static site.
+#
+# Set up once in the Render Dashboard: New > Blueprint, pick this repository
+# and the deploy/render branch. After that, every push to the branch builds
+# and deploys automatically.
+#
+# Only the Vite frontend is deployed here. The serverless function in api/
+# (the automations cron) is Vercel-specific and does not run on a static site.
+#
+# Optional: add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY under the
+# service's Environment settings to enable the Supabase-backed features.
+# Core agent runs work without them.
+
+services:
+  - type: web
+    runtime: static
+    name: iloveagents
+    branch: deploy/render
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    autoDeployTrigger: commit
+    buildFilter:
+      ignoredPaths:
+        - "**/*.md"
+        - docs/**
+        - .github/**
+        - src/test/**
+        - "src/**/*.test.js"
+        - "src/**/*.test.jsx"
+    envVars:
+      # @supabase/* and jsdom need Node 22+; matches .nvmrc.
+      - key: NODE_VERSION
+        value: "22"
+    routes:
+      # Client-side routing (react-router). Existing files such as /assets/*
+      # are served first; every other path falls back to the app shell.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      # Vite fingerprints everything in /assets, so it can be cached forever.
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
